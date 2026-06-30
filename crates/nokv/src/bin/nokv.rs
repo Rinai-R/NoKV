@@ -2856,4 +2856,213 @@ mod tests {
         assert_eq!(resp3["id"], 3);
         assert!(resp3["result"]["content"][0]["text"].as_str().is_some());
     }
+
+    #[test]
+    fn mcp_tools_list_exposes_exactly_seven_tools() {
+        let store = MemoryObjectStore::new();
+        let client = NoKvFsClient::connect(spawn_test_server(), store);
+        let reqs = r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#.to_owned() + "\n";
+        let reader = std::io::Cursor::new(reqs);
+        let mut writer = Vec::new();
+        run_mcp_stream(client, reader, &mut writer).unwrap();
+        let output = String::from_utf8(writer).unwrap();
+        let resp: serde_json::Value = serde_json::from_str(output.lines().next().unwrap()).unwrap();
+        let tools = resp["result"]["tools"].as_array().unwrap();
+        let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
+        assert_eq!(
+            names,
+            vec!["ls", "stat", "catalog", "read", "aggregate", "find", "grep"]
+        );
+    }
+
+    #[test]
+    fn mcp_tools_list_passes_input_schema_unchanged() {
+        let store = MemoryObjectStore::new();
+        let client = NoKvFsClient::connect(spawn_test_server(), store);
+        let reqs = r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#.to_owned() + "\n";
+        let reader = std::io::Cursor::new(reqs);
+        let mut writer = Vec::new();
+        run_mcp_stream(client, reader, &mut writer).unwrap();
+        let output = String::from_utf8(writer).unwrap();
+        let resp: serde_json::Value = serde_json::from_str(output.lines().next().unwrap()).unwrap();
+        let tools = resp["result"]["tools"].as_array().unwrap();
+        let ls_tool = tools.iter().find(|t| t["name"] == "ls").unwrap();
+        let expected = nokv_agent::agent_tool_definitions()
+            .into_iter()
+            .find(|t| t.name == "ls")
+            .unwrap();
+        assert_eq!(ls_tool["inputSchema"], expected.parameters);
+    }
+
+    #[test]
+    fn mcp_tools_call_returns_structured_content() {
+        let store = MemoryObjectStore::new();
+        let client = NoKvFsClient::connect(spawn_test_server(), store);
+        let reqs = r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ls","arguments":{"path":"/"}}}"#.to_owned() + "\n";
+        let reader = std::io::Cursor::new(reqs);
+        let mut writer = Vec::new();
+        run_mcp_stream(client, reader, &mut writer).unwrap();
+        let output = String::from_utf8(writer).unwrap();
+        let resp: serde_json::Value = serde_json::from_str(output.lines().next().unwrap()).unwrap();
+        assert!(resp["result"]["structuredContent"].is_object());
+        assert!(resp["result"]["content"][0]["text"].as_str().is_some());
+    }
+
+    #[test]
+    fn mcp_tools_call_unknown_tool_returns_error_without_crashing() {
+        let store = MemoryObjectStore::new();
+        let client = NoKvFsClient::connect(spawn_test_server(), store);
+        let reqs = r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"nonexistent","arguments":{}}}"#.to_owned() + "\n";
+        let reader = std::io::Cursor::new(reqs);
+        let mut writer = Vec::new();
+        run_mcp_stream(client, reader, &mut writer).unwrap();
+        let output = String::from_utf8(writer).unwrap();
+        let resp: serde_json::Value = serde_json::from_str(output.lines().next().unwrap()).unwrap();
+        assert_eq!(resp["result"]["isError"], true);
+    }
+
+    #[test]
+    fn mcp_tools_call_invalid_params_returns_jsonrpc_error() {
+        let store = MemoryObjectStore::new();
+        let client = NoKvFsClient::connect(spawn_test_server(), store);
+        let reqs = r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"arguments":{}}}"#
+            .to_owned()
+            + "\n";
+        let reader = std::io::Cursor::new(reqs);
+        let mut writer = Vec::new();
+        run_mcp_stream(client, reader, &mut writer).unwrap();
+        let output = String::from_utf8(writer).unwrap();
+        let resp: serde_json::Value = serde_json::from_str(output.lines().next().unwrap()).unwrap();
+        assert_eq!(resp["error"]["code"], -32602);
+    }
+
+    #[test]
+    fn mcp_unknown_method_returns_method_not_found() {
+        let store = MemoryObjectStore::new();
+        let client = NoKvFsClient::connect(spawn_test_server(), store);
+        let reqs = r#"{"jsonrpc":"2.0","id":1,"method":"nonexistent/method"}"#.to_owned() + "\n";
+        let reader = std::io::Cursor::new(reqs);
+        let mut writer = Vec::new();
+        run_mcp_stream(client, reader, &mut writer).unwrap();
+        let output = String::from_utf8(writer).unwrap();
+        let resp: serde_json::Value = serde_json::from_str(output.lines().next().unwrap()).unwrap();
+        assert_eq!(resp["error"]["code"], -32601);
+    }
+
+    #[test]
+    fn mcp_rejects_missing_jsonrpc_field() {
+        let store = MemoryObjectStore::new();
+        let client = NoKvFsClient::connect(spawn_test_server(), store);
+        let reqs = r#"{"id":1,"method":"tools/list"}"#.to_owned() + "\n";
+        let reader = std::io::Cursor::new(reqs);
+        let mut writer = Vec::new();
+        run_mcp_stream(client, reader, &mut writer).unwrap();
+        let output = String::from_utf8(writer).unwrap();
+        let resp: serde_json::Value = serde_json::from_str(output.lines().next().unwrap()).unwrap();
+        assert_eq!(resp["error"]["code"], -32600);
+    }
+
+    #[test]
+    fn mcp_rejects_wrong_jsonrpc_version() {
+        let store = MemoryObjectStore::new();
+        let client = NoKvFsClient::connect(spawn_test_server(), store);
+        let reqs = r#"{"jsonrpc":"1.0","id":1,"method":"tools/list"}"#.to_owned() + "\n";
+        let reader = std::io::Cursor::new(reqs);
+        let mut writer = Vec::new();
+        run_mcp_stream(client, reader, &mut writer).unwrap();
+        let output = String::from_utf8(writer).unwrap();
+        let resp: serde_json::Value = serde_json::from_str(output.lines().next().unwrap()).unwrap();
+        assert_eq!(resp["error"]["code"], -32600);
+    }
+
+    #[test]
+    fn mcp_rejects_invalid_json_with_parse_error() {
+        let store = MemoryObjectStore::new();
+        let client = NoKvFsClient::connect(spawn_test_server(), store);
+        let reqs = "not valid json\n".to_owned();
+        let reader = std::io::Cursor::new(reqs);
+        let mut writer = Vec::new();
+        run_mcp_stream(client, reader, &mut writer).unwrap();
+        let output = String::from_utf8(writer).unwrap();
+        let resp: serde_json::Value = serde_json::from_str(output.lines().next().unwrap()).unwrap();
+        assert_eq!(resp["error"]["code"], -32700);
+    }
+
+    #[test]
+    fn mcp_rejects_batch_requests() {
+        let store = MemoryObjectStore::new();
+        let client = NoKvFsClient::connect(spawn_test_server(), store);
+        let reqs = r#"[{"jsonrpc":"2.0","id":1,"method":"tools/list"}]"#.to_owned() + "\n";
+        let reader = std::io::Cursor::new(reqs);
+        let mut writer = Vec::new();
+        run_mcp_stream(client, reader, &mut writer).unwrap();
+        let output = String::from_utf8(writer).unwrap();
+        let resp: serde_json::Value = serde_json::from_str(output.lines().next().unwrap()).unwrap();
+        assert_eq!(resp["error"]["code"], -32600);
+    }
+
+    #[test]
+    fn mcp_id_null_gets_a_response_not_treated_as_notification() {
+        let store = MemoryObjectStore::new();
+        let client = NoKvFsClient::connect(spawn_test_server(), store);
+        let reqs = r#"{"jsonrpc":"2.0","id":null,"method":"tools/list"}"#.to_owned() + "\n";
+        let reader = std::io::Cursor::new(reqs);
+        let mut writer = Vec::new();
+        run_mcp_stream(client, reader, &mut writer).unwrap();
+        let output = String::from_utf8(writer).unwrap();
+        assert!(!output.is_empty());
+        let resp: serde_json::Value = serde_json::from_str(output.lines().next().unwrap()).unwrap();
+        assert!(resp["result"].is_object());
+    }
+
+    #[test]
+    fn mcp_missing_id_is_treated_as_notification_no_response() {
+        let store = MemoryObjectStore::new();
+        let client = NoKvFsClient::connect(spawn_test_server(), store);
+        let reqs = r#"{"jsonrpc":"2.0","method":"initialized"}"#.to_owned() + "\n";
+        let reader = std::io::Cursor::new(reqs);
+        let mut writer = Vec::new();
+        run_mcp_stream(client, reader, &mut writer).unwrap();
+        let output = String::from_utf8(writer).unwrap();
+        assert!(output.is_empty());
+    }
+
+    #[test]
+    fn mcp_initialize_rejects_unsupported_protocol_version() {
+        let store = MemoryObjectStore::new();
+        let client = NoKvFsClient::connect(spawn_test_server(), store);
+        let reqs = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"1999-01-01"}}"#.to_owned() + "\n";
+        let reader = std::io::Cursor::new(reqs);
+        let mut writer = Vec::new();
+        run_mcp_stream(client, reader, &mut writer).unwrap();
+        let output = String::from_utf8(writer).unwrap();
+        let resp: serde_json::Value = serde_json::from_str(output.lines().next().unwrap()).unwrap();
+        assert_eq!(resp["error"]["code"], -32602);
+    }
+
+    #[test]
+    fn mcp_initialize_accepts_second_supported_version() {
+        let store = MemoryObjectStore::new();
+        let client = NoKvFsClient::connect(spawn_test_server(), store);
+        let reqs = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26"}}"#.to_owned() + "\n";
+        let reader = std::io::Cursor::new(reqs);
+        let mut writer = Vec::new();
+        run_mcp_stream(client, reader, &mut writer).unwrap();
+        let output = String::from_utf8(writer).unwrap();
+        let resp: serde_json::Value = serde_json::from_str(output.lines().next().unwrap()).unwrap();
+        assert_eq!(resp["result"]["protocolVersion"], "2025-03-26");
+    }
+
+    #[test]
+    fn mcp_initialize_defaults_when_version_omitted() {
+        let store = MemoryObjectStore::new();
+        let client = NoKvFsClient::connect(spawn_test_server(), store);
+        let reqs = r#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#.to_owned() + "\n";
+        let reader = std::io::Cursor::new(reqs);
+        let mut writer = Vec::new();
+        run_mcp_stream(client, reader, &mut writer).unwrap();
+        let output = String::from_utf8(writer).unwrap();
+        let resp: serde_json::Value = serde_json::from_str(output.lines().next().unwrap()).unwrap();
+        assert_eq!(resp["result"]["protocolVersion"], "2024-11-05");
+    }
 }
