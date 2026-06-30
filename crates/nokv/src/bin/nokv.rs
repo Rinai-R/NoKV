@@ -1759,11 +1759,34 @@ where
                     let is_notification = req.id.is_none();
                     let id = req.id.clone();
                     let result = match req.method.as_str() {
-                        "initialize" => Ok(json!({
-                            "protocolVersion": "2024-11-05",
-                            "capabilities": { "tools": {} },
-                            "serverInfo": { "name": "nokv-mcp", "version": "0.1.0" }
-                        })),
+                        "initialize" => {
+                            const SUPPORTED_PROTOCOL_VERSIONS: &[&str] =
+                                &["2024-11-05", "2025-03-26"];
+                            let requested = req
+                                .params
+                                .as_ref()
+                                .and_then(|p| p.get("protocolVersion"))
+                                .and_then(|v| v.as_str());
+                            match requested {
+                                Some(v) if SUPPORTED_PROTOCOL_VERSIONS.contains(&v) => Ok(json!({
+                                    "protocolVersion": v,
+                                    "capabilities": { "tools": {} },
+                                    "serverInfo": { "name": "nokv-mcp", "version": "0.1.0" }
+                                })),
+                                Some(v) => Err((
+                                    -32602_i64,
+                                    format!(
+                                        "unsupported protocol version {v}; supported: {}",
+                                        SUPPORTED_PROTOCOL_VERSIONS.join(", ")
+                                    ),
+                                )),
+                                None => Ok(json!({
+                                    "protocolVersion": SUPPORTED_PROTOCOL_VERSIONS[0],
+                                    "capabilities": { "tools": {} },
+                                    "serverInfo": { "name": "nokv-mcp", "version": "0.1.0" }
+                                })),
+                            }
+                        }
                         "initialized" | "ping" => Ok(json!({})),
                         "tools/list" => {
                             let tools: Vec<serde_json::Value> =
