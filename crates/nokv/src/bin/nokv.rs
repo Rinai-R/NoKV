@@ -1730,9 +1730,20 @@ where
 
     #[derive(serde::Deserialize)]
     struct JsonRpcRequest {
-        id: Option<serde_json::Value>,
-        method: String,
+        jsonrpc: Option<String>,
+        #[serde(default, deserialize_with = "deserialize_some")]
+        id: Option<Option<serde_json::Value>>,
+        method: Option<String>,
         params: Option<serde_json::Value>,
+    }
+
+    fn deserialize_some<'de, D>(
+        deserializer: D,
+    ) -> Result<Option<Option<serde_json::Value>>, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        serde::Deserialize::deserialize(deserializer).map(Some)
     }
 
     #[derive(serde::Deserialize)]
@@ -1753,89 +1764,133 @@ where
     while reader.read_line(&mut line)? > 0 {
         let trimmed = line.trim();
         if !trimmed.is_empty() {
-            let response = match serde_json::from_str::<JsonRpcRequest>(trimmed) {
-                Err(_) => err_response(None, -32700, "Parse error"),
-                Ok(req) => {
-                    let is_notification = req.id.is_none();
-                    let id = req.id.clone();
-                    let result = match req.method.as_str() {
-                        "initialize" => {
-                            const SUPPORTED_PROTOCOL_VERSIONS: &[&str] =
-                                &["2024-11-05", "2025-03-26"];
-                            let requested = req
-                                .params
-                                .as_ref()
-                                .and_then(|p| p.get("protocolVersion"))
-                                .and_then(|v| v.as_str());
-                            match requested {
-                                Some(v) if SUPPORTED_PROTOCOL_VERSIONS.contains(&v) => Ok(json!({
-                                    "protocolVersion": v,
-                                    "capabilities": { "tools": {} },
-                                    "serverInfo": { "name": "nokv-mcp", "version": "0.1.0" }
-                                })),
-                                Some(v) => Err((
-                                    -32602_i64,
-                                    format!(
-                                        "unsupported protocol version {v}; supported: {}",
-                                        SUPPORTED_PROTOCOL_VERSIONS.join(", ")
-                                    ),
-                                )),
-                                None => Ok(json!({
-                                    "protocolVersion": SUPPORTED_PROTOCOL_VERSIONS[0],
-                                    "capabilities": { "tools": {} },
-                                    "serverInfo": { "name": "nokv-mcp", "version": "0.1.0" }
-                                })),
-                            }
-                        }
-                        "initialized" | "ping" => Ok(json!({})),
-                        "tools/list" => {
-                            let tools: Vec<serde_json::Value> =
-                                nokv_agent::agent_tool_definitions()
-                                    .into_iter()
-                                    .map(|t| {
-                                        json!({
-                                            "name": t.name,
-                                            "description": t.description,
-                                            "inputSchema": t.parameters,
+            let maybe_response = match serde_json::from_str::<serde_json::Value>(trimmed) {
+                Err(_) => Some(err_response(None, -32700, "Parse error")),
+                Ok(raw) => {
+                    if raw.is_array() {
+                        Some(err_response(
+                            None,
+                            -32600,
+                            "Batch requests are not supported",
+                        ))
+                    } else if !raw.is_object() {
+                        Some(err_response(None, -32600, "Invalid Request"))
+                    } else {
+                        match serde_json::from_value::<JsonRpcRequest>(raw) {
+                            Err(_) => Some(err_response(None, -32600, "Invalid Request")),
+                            Ok(req) => {
+                                let id = req.id.clone().flatten();
+                                if req.jsonrpc.as_deref() != Some("2.0") {
+                                    Some(err_response(
+                                        id,
+                                        -32600,
+                                        "Invalid Request: jsonrpc must be \"2.0\"",
+                                    ))
+                                } else if req.method.is_none() {
+                                    Some(err_response(
+                                        id,
+                                        -32600,
+                                        "Invalid Request: missing method",
+                                    ))
+                                } else {
+                                    let is_notification = req.id.is_none();
+                                    let method = req.method.clone().unwrap();
+                                    let result = match method.as_str() {
+                                        "initialize" => {
+                                            const SUPPORTED_PROTOCOL_VERSIONS: &[&str] =
+                                                &["2024-11-05", "2025-03-26"];
+                                            let requested = req
+                                                .params
+                                                .as_ref()
+                                                .and_then(|p| p.get("protocolVersion"))
+                                                .and_then(|v| v.as_str());
+                                            match requested {
+                                                Some(v)
+                                                    if SUPPORTED_PROTOCOL_VERSIONS
+                                                        .contains(&v) =>
+                                                {
+                                                    Ok(json!({
+                                                        "protocolVersion": v,
+                                                        "capabilities": { "tools": {} },
+                                                        "serverInfo": { "name": "nokv-mcp", "version": "0.1.0" }
+                                                    }))
+                                                }
+                                                Some(v) => Err((
+                                                    -32602_i64,
+                                                    format!(
+                                                        "unsupported protocol version {v}; supported: {}",
+                                                        SUPPORTED_PROTOCOL_VERSIONS.join(", ")
+                                                    ),
+                                                )),
+                                                None => Ok(json!({
+                                                    "protocolVersion": SUPPORTED_PROTOCOL_VERSIONS[0],
+                                                    "capabilities": { "tools": {} },
+                                                    "serverInfo": { "name": "nokv-mcp", "version": "0.1.0" }
+                                                })),
+                                            }
+                                        }
+                                        "initialized" | "ping" => Ok(json!({})),
+                                        "tools/list" => {
+                                            let tools: Vec<serde_json::Value> =
+                                                nokv_agent::agent_tool_definitions()
+                                                    .into_iter()
+                                                    .map(|t| {
+                                                        json!({
+                                                            "name": t.name,
+                                                            "description": t.description,
+                                                            "inputSchema": t.parameters,
+                                                        })
+                                                    })
+                                                    .collect();
+                                            Ok(json!({ "tools": tools }))
+                                        }
+                                        "tools/call" => {
+                                            let params = req.params.clone().unwrap_or(json!({}));
+                                            match serde_json::from_value::<CallToolParams>(params) {
+                                                Err(e) => Err((
+                                                    -32602_i64,
+                                                    format!("Invalid params: {e}"),
+                                                )),
+                                                Ok(call) => {
+                                                    let args = call.arguments.unwrap_or(json!({}));
+                                                    match nokv_agent::execute_agent_tool(
+                                                        &client, &call.name, &args,
+                                                    ) {
+                                                        Ok(val) => Ok(json!({
+                                                            "content": [{ "type": "text", "text": serde_json::to_string_pretty(&val).unwrap_or_default() }],
+                                                            "structuredContent": val,
+                                                        })),
+                                                        Err(err) => Ok(json!({
+                                                            "content": [{ "type": "text", "text": err.to_string() }],
+                                                            "isError": true
+                                                        })),
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        other => {
+                                            Err((-32601_i64, format!("Method not found: {other}")))
+                                        }
+                                    };
+                                    if is_notification {
+                                        None
+                                    } else {
+                                        Some(match result {
+                                            Ok(val) => ok_response(id, val),
+                                            Err((code, msg)) => err_response(id, code, &msg),
                                         })
-                                    })
-                                    .collect();
-                            Ok(json!({ "tools": tools }))
-                        }
-                        "tools/call" => {
-                            let params = req.params.unwrap_or(json!({}));
-                            match serde_json::from_value::<CallToolParams>(params) {
-                                Err(e) => Err((-32602_i64, format!("Invalid params: {e}"))),
-                                Ok(call) => {
-                                    let args = call.arguments.unwrap_or(json!({}));
-                                    match nokv_agent::execute_agent_tool(&client, &call.name, &args)
-                                    {
-                                        Ok(val) => Ok(json!({
-                                            "content": [{ "type": "text", "text": serde_json::to_string_pretty(&val).unwrap_or_default() }]
-                                        })),
-                                        Err(err) => Ok(json!({
-                                            "content": [{ "type": "text", "text": err.to_string() }],
-                                            "isError": true
-                                        })),
                                     }
                                 }
                             }
                         }
-                        other => Err((-32601_i64, format!("Method not found: {other}"))),
-                    };
-                    if is_notification {
-                        line.clear();
-                        continue;
-                    }
-                    match result {
-                        Ok(val) => ok_response(id, val),
-                        Err((code, msg)) => err_response(id, code, &msg),
                     }
                 }
             };
-            serde_json::to_writer(&mut writer, &response)?;
-            writer.write_all(b"\n")?;
-            writer.flush()?;
+            if let Some(response) = maybe_response {
+                serde_json::to_writer(&mut writer, &response)?;
+                writer.write_all(b"\n")?;
+                writer.flush()?;
+            }
         }
         line.clear();
     }
