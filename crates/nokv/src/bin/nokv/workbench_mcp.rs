@@ -79,7 +79,7 @@ pub fn tool_definitions() -> Vec<AgentToolDefinition> {
                 "properties": {
                     "id": {"type": "string"},
                     "section": {"type": "string", "enum": SECTIONS},
-                    "path": {"type": "string"},
+                    "path": {"type": "string", "description": "Path relative to section. Do not prefix it with the section name."},
                     "text": {"type": "string"},
                     "base64": {"type": "string"},
                     "content_type": {"type": "string"},
@@ -98,7 +98,7 @@ pub fn tool_definitions() -> Vec<AgentToolDefinition> {
                 "properties": {
                     "id": {"type": "string"},
                     "section": {"type": ["string", "null"], "enum": ["input", "scripts", "outputs", "logs", "metadata", null]},
-                    "path": {"type": ["string", "null"]},
+                    "path": {"type": ["string", "null"], "description": "Optional path relative to section. Do not prefix it with the section name."},
                     "cursor": {"type": ["string", "null"]},
                     "limit": {"type": "integer", "minimum": 1}
                 },
@@ -115,7 +115,7 @@ pub fn tool_definitions() -> Vec<AgentToolDefinition> {
                 "properties": {
                     "id": {"type": "string"},
                     "section": {"type": ["string", "null"], "enum": ["input", "scripts", "outputs", "logs", "metadata", null]},
-                    "path": {"type": ["string", "null"]}
+                    "path": {"type": ["string", "null"], "description": "Optional path relative to section. Do not prefix it with the section name."}
                 },
                 "additionalProperties": false
             }),
@@ -130,7 +130,7 @@ pub fn tool_definitions() -> Vec<AgentToolDefinition> {
                 "properties": {
                     "id": {"type": "string"},
                     "section": {"type": "string", "enum": SECTIONS},
-                    "path": {"type": "string"},
+                    "path": {"type": "string", "description": "Path relative to section. Do not prefix it with the section name."},
                     "format": {"type": "string", "enum": ["structured", "bytes"]},
                     "cursor": {"type": ["string", "null"]},
                     "offset": {"type": "integer", "minimum": 0},
@@ -149,7 +149,7 @@ pub fn tool_definitions() -> Vec<AgentToolDefinition> {
                 "properties": {
                     "id": {"type": "string"},
                     "section": {"type": ["string", "null"], "enum": ["input", "scripts", "outputs", "logs", "metadata", null]},
-                    "path": {"type": ["string", "null"]},
+                    "path": {"type": ["string", "null"], "description": "Optional path relative to section. Do not prefix it with the section name."},
                     "pattern": {"type": "string"},
                     "recursive": {"type": "boolean"},
                     "cursor": {"type": ["string", "null"]},
@@ -258,7 +258,7 @@ where
 {
     let id = required_workbench_id(args)?;
     let section = required_section(args)?;
-    let rel_path = required_relative_path(args, "path")?;
+    let rel_path = required_section_relative_path(args, section, "path")?;
     let replace = optional_bool(args, "replace")?.unwrap_or(false);
     let (bytes, default_content_type) = payload_bytes(args, options.max_bytes)?;
     let content_type = optional_string(args, "content_type")?
@@ -309,7 +309,7 @@ where
     let target = match read_tool {
         "read" => {
             let section = required_section(args)?;
-            let rel_path = required_relative_path(args, "path")?;
+            let rel_path = required_section_relative_path(args, section, "path")?;
             section_path(options, &id, section, Some(&rel_path))
         }
         _ => scoped_path_from_optional_args(options, &id, args)?,
@@ -988,7 +988,11 @@ fn scoped_path_from_optional_args(
         (Some(section), path) => {
             validate_section(section)?;
             let rel = match path {
-                Some(raw) => Some(normalize_relative_path(raw, "path", true)?),
+                Some(raw) => {
+                    let rel_path = normalize_relative_path(raw, "path", true)?;
+                    reject_section_prefixed_path(section, &rel_path, "path")?;
+                    Some(rel_path)
+                }
                 None => None,
             };
             Ok(section_path(options, id, section, rel.as_deref()))
@@ -996,8 +1000,32 @@ fn scoped_path_from_optional_args(
     }
 }
 
+fn required_section_relative_path(
+    args: &Value,
+    section: &str,
+    field: &'static str,
+) -> Result<String, WorkbenchToolError> {
+    let rel_path = required_relative_path(args, field)?;
+    reject_section_prefixed_path(section, &rel_path, field)?;
+    Ok(rel_path)
+}
+
 fn required_relative_path(args: &Value, field: &'static str) -> Result<String, WorkbenchToolError> {
     normalize_relative_path(required_string(args, field)?, field, false)
+}
+
+fn reject_section_prefixed_path(
+    section: &str,
+    rel_path: &str,
+    field: &'static str,
+) -> Result<(), WorkbenchToolError> {
+    let section_prefix = format!("{section}/");
+    if rel_path == section || rel_path.starts_with(&section_prefix) {
+        return Err(WorkbenchToolError::new(format!(
+            "{field} must be relative to section {section}; do not prefix it with {section}/"
+        )));
+    }
+    Ok(())
 }
 
 fn normalize_relative_path(

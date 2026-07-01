@@ -3583,6 +3583,60 @@ mod tests {
     }
 
     #[test]
+    fn workbench_mcp_rejects_section_prefixed_paths() {
+        let responses = run_workbench_mcp_requests(vec![
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "nokv_workbench_put_file",
+                    "arguments": {
+                        "id": "spedas-task-006",
+                        "section": "outputs",
+                        "path": "outputs/spectrum.csv",
+                        "text": "freq,power\n1,2\n"
+                    }
+                }
+            }),
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {
+                    "name": "nokv_workbench_read",
+                    "arguments": {
+                        "id": "spedas-task-006",
+                        "section": "outputs",
+                        "path": "outputs/spectrum.csv"
+                    }
+                }
+            }),
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {
+                    "name": "nokv_workbench_list",
+                    "arguments": {
+                        "id": "spedas-task-006",
+                        "section": "outputs",
+                        "path": "outputs"
+                    }
+                }
+            }),
+        ]);
+
+        for response in responses {
+            assert_eq!(response["result"]["isError"], true);
+            assert!(response["result"]["content"][0]["text"]
+                .as_str()
+                .unwrap()
+                .contains("relative to section outputs"));
+        }
+    }
+
+    #[test]
     fn workbench_mcp_rejects_invalid_ids_sections_payloads_and_manifest() {
         let responses = run_workbench_mcp_requests(vec![
             serde_json::json!({
