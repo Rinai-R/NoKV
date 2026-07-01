@@ -57,7 +57,7 @@ pub fn normalize_workbench_root(raw: &str) -> Result<String, String> {
 pub fn tool_definitions() -> Vec<AgentToolDefinition> {
     vec![
         AgentToolDefinition {
-            name: "nokv_workbench_create",
+            name: "workbench_create",
             description:
                 "Create a NoKV-controlled workbench directory with input, scripts, outputs, logs, and metadata sections.",
             parameters: json!({
@@ -70,7 +70,7 @@ pub fn tool_definitions() -> Vec<AgentToolDefinition> {
             }),
         },
         AgentToolDefinition {
-            name: "nokv_workbench_put_file",
+            name: "workbench_put_file",
             description:
                 "Publish one file into a jailed workbench section. Paths are relative to the section; overwrite requires replace=true.",
             parameters: json!({
@@ -89,7 +89,7 @@ pub fn tool_definitions() -> Vec<AgentToolDefinition> {
             }),
         },
         AgentToolDefinition {
-            name: "nokv_workbench_list",
+            name: "workbench_list",
             description:
                 "List a workbench, section, or subdirectory through the NoKV namespace. Not recursive.",
             parameters: json!({
@@ -106,7 +106,7 @@ pub fn tool_definitions() -> Vec<AgentToolDefinition> {
             }),
         },
         AgentToolDefinition {
-            name: "nokv_workbench_stat",
+            name: "workbench_stat",
             description:
                 "Inspect a workbench, section, subdirectory, or file compact card through the NoKV namespace.",
             parameters: json!({
@@ -121,7 +121,7 @@ pub fn tool_definitions() -> Vec<AgentToolDefinition> {
             }),
         },
         AgentToolDefinition {
-            name: "nokv_workbench_read",
+            name: "workbench_read",
             description:
                 "Read one workbench file through the NoKV namespace. Structured mode returns JSON, YAML, or text records; bytes mode returns byte ranges.",
             parameters: json!({
@@ -140,7 +140,7 @@ pub fn tool_definitions() -> Vec<AgentToolDefinition> {
             }),
         },
         AgentToolDefinition {
-            name: "nokv_workbench_grep",
+            name: "workbench_grep",
             description:
                 "Search workbench file bodies for a case-insensitive literal substring. This is not regex grep.",
             parameters: json!({
@@ -159,7 +159,7 @@ pub fn tool_definitions() -> Vec<AgentToolDefinition> {
             }),
         },
         AgentToolDefinition {
-            name: "nokv_workbench_find",
+            name: "workbench_find",
             description:
                 "List workbenches across the workbench root with optional committed-state and manifest substring filters. Returns compact manifest summaries by default.",
             parameters: json!({
@@ -175,7 +175,7 @@ pub fn tool_definitions() -> Vec<AgentToolDefinition> {
             }),
         },
         AgentToolDefinition {
-            name: "nokv_workbench_commit",
+            name: "workbench_commit",
             description:
                 "Mark a workbench complete by publishing metadata/run_manifest.json. This is the v0 commit point.",
             parameters: json!({
@@ -190,7 +190,7 @@ pub fn tool_definitions() -> Vec<AgentToolDefinition> {
             }),
         },
         AgentToolDefinition {
-            name: "nokv_workbench_snapshot",
+            name: "workbench_snapshot",
             description:
                 "Snapshot a committed workbench subtree and return the NoKV snapshot id and read version.",
             parameters: json!({
@@ -215,15 +215,15 @@ where
     O: ObjectStore + Send + Sync + 'static,
 {
     match name {
-        "nokv_workbench_create" => create_workbench(client, options, args),
-        "nokv_workbench_put_file" => put_file(client, options, args),
-        "nokv_workbench_list" => execute_read_tool(client, options, "ls", args),
-        "nokv_workbench_stat" => execute_read_tool(client, options, "stat", args),
-        "nokv_workbench_read" => execute_read_tool(client, options, "read", args),
-        "nokv_workbench_grep" => execute_read_tool(client, options, "grep", args),
-        "nokv_workbench_find" => find_workbenches(client, options, args),
-        "nokv_workbench_commit" => commit_workbench(client, options, args),
-        "nokv_workbench_snapshot" => snapshot_workbench(client, options, args),
+        "workbench_create" => create_workbench(client, options, args),
+        "workbench_put_file" => put_file(client, options, args),
+        "workbench_list" => execute_read_tool(client, options, "ls", args),
+        "workbench_stat" => execute_read_tool(client, options, "stat", args),
+        "workbench_read" => execute_read_tool(client, options, "read", args),
+        "workbench_grep" => execute_read_tool(client, options, "grep", args),
+        "workbench_find" => find_workbenches(client, options, args),
+        "workbench_commit" => commit_workbench(client, options, args),
+        "workbench_snapshot" => snapshot_workbench(client, options, args),
         other => Err(WorkbenchToolError::new(format!(
             "unknown workbench tool {other}"
         ))),
@@ -905,7 +905,36 @@ where
     Ok(())
 }
 
+/// Ensure `path` exists as a directory, creating any missing ancestors
+/// (mkdir -p). `mkdir` is non-recursive, so a multi-level workbench root such
+/// as `/agents/<agent_id>/wb` (per-agent tenant isolation) requires each
+/// ancestor to be created in turn — otherwise the first create fails with
+/// "metadata entry not found".
 fn ensure_dir_path<O>(
+    client: &NoKvFsClient<O>,
+    options: &WorkbenchMcpOptions,
+    path: &str,
+) -> Result<(), WorkbenchToolError>
+where
+    O: ObjectStore + Send + Sync + 'static,
+{
+    let mut current = String::new();
+    for component in path.trim_start_matches('/').split('/') {
+        if component.is_empty() {
+            continue;
+        }
+        current.push('/');
+        current.push_str(component);
+        ensure_single_dir(client, options, &current)?;
+    }
+    Ok(())
+}
+
+/// Ensure one path component exists as a directory. Idempotent: if a concurrent
+/// creator wins the race (e.g. two agents/daemons materializing the shared
+/// ancestors of their roots at once), a re-stat confirming the directory now
+/// exists is treated as success rather than surfacing the CAS conflict.
+fn ensure_single_dir<O>(
     client: &NoKvFsClient<O>,
     options: &WorkbenchMcpOptions,
     path: &str,
@@ -921,11 +950,20 @@ where
             "path exists but is not a directory: {path}"
         )));
     }
-    client
+    match client
         .metadata()
         .mkdir(path, DEFAULT_MODE_DIR, options.uid, options.gid)
-        .map_err(client_error)?;
-    Ok(())
+    {
+        Ok(_) => Ok(()),
+        Err(err) => {
+            if let Some(metadata) = client.metadata().stat_path(path).map_err(client_error)? {
+                if metadata.attr.file_type == FileType::Directory {
+                    return Ok(());
+                }
+            }
+            Err(client_error(err))
+        }
+    }
 }
 
 fn required_workbench_id(args: &Value) -> Result<String, WorkbenchToolError> {
@@ -1130,6 +1168,15 @@ fn payload_bytes(
     let text = optional_string(args, "text")?;
     let encoded = optional_string(args, "base64")?;
     let (bytes, content_type) = match (text, encoded) {
+        (Some(text), Some("")) if !text.is_empty() => {
+            (text.as_bytes().to_vec(), "text/plain; charset=utf-8")
+        }
+        (Some(""), Some(encoded)) if !encoded.is_empty() => (
+            base64::engine::general_purpose::STANDARD
+                .decode(encoded)
+                .map_err(|err| WorkbenchToolError::new(format!("invalid base64 payload: {err}")))?,
+            "application/octet-stream",
+        ),
         (Some(_), Some(_)) => {
             return Err(WorkbenchToolError::new(
                 "provide exactly one of text or base64",

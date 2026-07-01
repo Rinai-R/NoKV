@@ -3145,7 +3145,7 @@ mod tests {
     }
 
     #[test]
-    fn workbench_mcp_tools_are_prefixed_and_isolated() {
+    fn workbench_mcp_tools_use_workbench_prefix_and_are_isolated() {
         let responses = run_workbench_mcp_requests(vec![serde_json::json!({
             "jsonrpc": "2.0",
             "id": 1,
@@ -3156,18 +3156,19 @@ mod tests {
         assert_eq!(
             names,
             vec![
-                "nokv_workbench_create",
-                "nokv_workbench_put_file",
-                "nokv_workbench_list",
-                "nokv_workbench_stat",
-                "nokv_workbench_read",
-                "nokv_workbench_grep",
-                "nokv_workbench_find",
-                "nokv_workbench_commit",
-                "nokv_workbench_snapshot",
+                "workbench_create",
+                "workbench_put_file",
+                "workbench_list",
+                "workbench_stat",
+                "workbench_read",
+                "workbench_grep",
+                "workbench_find",
+                "workbench_commit",
+                "workbench_snapshot",
             ]
         );
-        assert!(names.iter().all(|name| name.starts_with("nokv_workbench_")));
+        assert!(names.iter().all(|name| name.starts_with("workbench_")));
+        assert!(names.iter().all(|name| !name.starts_with("nokv_")));
         assert!(!names.contains(&"read"));
         assert!(!names.contains(&"grep"));
     }
@@ -3195,7 +3196,7 @@ mod tests {
                 "id": 1,
                 "method": "tools/call",
                 "params": {
-                    "name": "nokv_workbench_create",
+                    "name": "workbench_create",
                     "arguments": {"id": "spedas-task-001"}
                 }
             }),
@@ -3204,7 +3205,7 @@ mod tests {
                 "id": 2,
                 "method": "tools/call",
                 "params": {
-                    "name": "nokv_workbench_put_file",
+                    "name": "workbench_put_file",
                     "arguments": {
                         "id": "spedas-task-001",
                         "section": "input",
@@ -3219,7 +3220,7 @@ mod tests {
                 "id": 3,
                 "method": "tools/call",
                 "params": {
-                    "name": "nokv_workbench_put_file",
+                    "name": "workbench_put_file",
                     "arguments": {
                         "id": "spedas-task-001",
                         "section": "outputs",
@@ -3234,7 +3235,7 @@ mod tests {
                 "id": 4,
                 "method": "tools/call",
                 "params": {
-                    "name": "nokv_workbench_put_file",
+                    "name": "workbench_put_file",
                     "arguments": {
                         "id": "spedas-task-001",
                         "section": "scripts",
@@ -3249,7 +3250,7 @@ mod tests {
                 "id": 5,
                 "method": "tools/call",
                 "params": {
-                    "name": "nokv_workbench_list",
+                    "name": "workbench_list",
                     "arguments": {
                         "id": "spedas-task-001",
                         "section": "outputs"
@@ -3261,7 +3262,7 @@ mod tests {
                 "id": 6,
                 "method": "tools/call",
                 "params": {
-                    "name": "nokv_workbench_stat",
+                    "name": "workbench_stat",
                     "arguments": {
                         "id": "spedas-task-001",
                         "section": "outputs",
@@ -3274,7 +3275,7 @@ mod tests {
                 "id": 7,
                 "method": "tools/call",
                 "params": {
-                    "name": "nokv_workbench_read",
+                    "name": "workbench_read",
                     "arguments": {
                         "id": "spedas-task-001",
                         "section": "outputs",
@@ -3288,7 +3289,7 @@ mod tests {
                 "id": 8,
                 "method": "tools/call",
                 "params": {
-                    "name": "nokv_workbench_grep",
+                    "name": "workbench_grep",
                     "arguments": {
                         "id": "spedas-task-001",
                         "section": "outputs",
@@ -3302,7 +3303,7 @@ mod tests {
                 "id": 9,
                 "method": "tools/call",
                 "params": {
-                    "name": "nokv_workbench_commit",
+                    "name": "workbench_commit",
                     "arguments": {
                         "id": "spedas-task-001",
                         "manifest": {
@@ -3317,7 +3318,7 @@ mod tests {
                 "id": 10,
                 "method": "tools/call",
                 "params": {
-                    "name": "nokv_workbench_read",
+                    "name": "workbench_read",
                     "arguments": {
                         "id": "spedas-task-001",
                         "section": "metadata",
@@ -3331,7 +3332,7 @@ mod tests {
                 "id": 11,
                 "method": "tools/call",
                 "params": {
-                    "name": "nokv_workbench_snapshot",
+                    "name": "workbench_snapshot",
                     "arguments": {"id": "spedas-task-001"}
                 }
             }),
@@ -3420,7 +3421,7 @@ mod tests {
                 "id": 1,
                 "method": "tools/call",
                 "params": {
-                    "name": "nokv_workbench_create",
+                    "name": "workbench_create",
                     "arguments": {"id": "spedas-task-010"}
                 }
             }),
@@ -3429,7 +3430,7 @@ mod tests {
                 "id": 2,
                 "method": "tools/call",
                 "params": {
-                    "name": "nokv_workbench_create",
+                    "name": "workbench_create",
                     "arguments": {"id": "spedas-task-011"}
                 }
             }),
@@ -3438,7 +3439,7 @@ mod tests {
                 "id": 3,
                 "method": "tools/call",
                 "params": {
-                    "name": "nokv_workbench_commit",
+                    "name": "workbench_commit",
                     "arguments": {
                         "id": "spedas-task-010",
                         "manifest": {
@@ -3454,7 +3455,7 @@ mod tests {
                 "id": 4,
                 "method": "tools/call",
                 "params": {
-                    "name": "nokv_workbench_find",
+                    "name": "workbench_find",
                     "arguments": {
                         "committed": true,
                         "manifest_pattern": "spedas",
@@ -3467,7 +3468,7 @@ mod tests {
                 "id": 5,
                 "method": "tools/call",
                 "params": {
-                    "name": "nokv_workbench_find",
+                    "name": "workbench_find",
                     "arguments": {
                         "committed": false,
                         "limit": 10
@@ -3479,7 +3480,7 @@ mod tests {
                 "id": 6,
                 "method": "tools/call",
                 "params": {
-                    "name": "nokv_workbench_find",
+                    "name": "workbench_find",
                     "arguments": {
                         "committed": true,
                         "include_manifest": true,
@@ -3531,7 +3532,7 @@ mod tests {
                 "id": 1,
                 "method": "tools/call",
                 "params": {
-                    "name": "nokv_workbench_create",
+                    "name": "workbench_create",
                     "arguments": {"id": "spedas-task-002"}
                 }
             }),
@@ -3540,7 +3541,7 @@ mod tests {
                 "id": 2,
                 "method": "tools/call",
                 "params": {
-                    "name": "nokv_workbench_put_file",
+                    "name": "workbench_put_file",
                     "arguments": {
                         "id": "spedas-task-002",
                         "section": "outputs",
@@ -3554,7 +3555,7 @@ mod tests {
                 "id": 3,
                 "method": "tools/call",
                 "params": {
-                    "name": "nokv_workbench_put_file",
+                    "name": "workbench_put_file",
                     "arguments": {
                         "id": "spedas-task-002",
                         "section": "outputs",
@@ -3568,7 +3569,7 @@ mod tests {
                 "id": 4,
                 "method": "tools/call",
                 "params": {
-                    "name": "nokv_workbench_put_file",
+                    "name": "workbench_put_file",
                     "arguments": {
                         "id": "spedas-task-002",
                         "section": "outputs",
@@ -3583,6 +3584,95 @@ mod tests {
     }
 
     #[test]
+    fn workbench_mcp_put_file_ignores_empty_unused_payload_variant() {
+        let responses = run_workbench_mcp_requests(vec![
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "workbench_create",
+                    "arguments": {"id": "spedas-task-012"}
+                }
+            }),
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {
+                    "name": "workbench_put_file",
+                    "arguments": {
+                        "id": "spedas-task-012",
+                        "section": "input",
+                        "path": "from-text.txt",
+                        "text": "hello from text",
+                        "base64": "",
+                        "content_type": "text/plain; charset=utf-8"
+                    }
+                }
+            }),
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {
+                    "name": "workbench_put_file",
+                    "arguments": {
+                        "id": "spedas-task-012",
+                        "section": "input",
+                        "path": "from-base64.txt",
+                        "text": "",
+                        "base64": "aGVsbG8gZnJvbSBiYXNlNjQ=",
+                        "content_type": "text/plain; charset=utf-8"
+                    }
+                }
+            }),
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 4,
+                "method": "tools/call",
+                "params": {
+                    "name": "workbench_read",
+                    "arguments": {
+                        "id": "spedas-task-012",
+                        "section": "input",
+                        "path": "from-text.txt",
+                        "format": "structured"
+                    }
+                }
+            }),
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 5,
+                "method": "tools/call",
+                "params": {
+                    "name": "workbench_read",
+                    "arguments": {
+                        "id": "spedas-task-012",
+                        "section": "input",
+                        "path": "from-base64.txt",
+                        "format": "structured"
+                    }
+                }
+            }),
+        ]);
+        for (index, response) in responses.iter().enumerate() {
+            assert_ne!(
+                response["result"]["isError"], true,
+                "response {index}: {response}"
+            );
+        }
+        assert_eq!(
+            responses[3]["result"]["structuredContent"]["items"][0]["value"]["text"],
+            "hello from text"
+        );
+        assert_eq!(
+            responses[4]["result"]["structuredContent"]["items"][0]["value"]["text"],
+            "hello from base64"
+        );
+    }
+
+    #[test]
     fn workbench_mcp_rejects_section_prefixed_paths() {
         let responses = run_workbench_mcp_requests(vec![
             serde_json::json!({
@@ -3590,7 +3680,7 @@ mod tests {
                 "id": 1,
                 "method": "tools/call",
                 "params": {
-                    "name": "nokv_workbench_put_file",
+                    "name": "workbench_put_file",
                     "arguments": {
                         "id": "spedas-task-006",
                         "section": "outputs",
@@ -3604,7 +3694,7 @@ mod tests {
                 "id": 2,
                 "method": "tools/call",
                 "params": {
-                    "name": "nokv_workbench_read",
+                    "name": "workbench_read",
                     "arguments": {
                         "id": "spedas-task-006",
                         "section": "outputs",
@@ -3617,7 +3707,7 @@ mod tests {
                 "id": 3,
                 "method": "tools/call",
                 "params": {
-                    "name": "nokv_workbench_list",
+                    "name": "workbench_list",
                     "arguments": {
                         "id": "spedas-task-006",
                         "section": "outputs",
@@ -3644,7 +3734,7 @@ mod tests {
                 "id": 1,
                 "method": "tools/call",
                 "params": {
-                    "name": "nokv_workbench_create",
+                    "name": "workbench_create",
                     "arguments": {"id": "_bad"}
                 }
             }),
@@ -3653,7 +3743,7 @@ mod tests {
                 "id": 2,
                 "method": "tools/call",
                 "params": {
-                    "name": "nokv_workbench_put_file",
+                    "name": "workbench_put_file",
                     "arguments": {
                         "id": "spedas-task-004",
                         "section": "tmp",
@@ -3667,7 +3757,7 @@ mod tests {
                 "id": 3,
                 "method": "tools/call",
                 "params": {
-                    "name": "nokv_workbench_put_file",
+                    "name": "workbench_put_file",
                     "arguments": {
                         "id": "spedas-task-004",
                         "section": "outputs",
@@ -3682,7 +3772,7 @@ mod tests {
                 "id": 4,
                 "method": "tools/call",
                 "params": {
-                    "name": "nokv_workbench_put_file",
+                    "name": "workbench_put_file",
                     "arguments": {
                         "id": "spedas-task-004",
                         "section": "outputs",
@@ -3695,7 +3785,7 @@ mod tests {
                 "id": 5,
                 "method": "tools/call",
                 "params": {
-                    "name": "nokv_workbench_put_file",
+                    "name": "workbench_put_file",
                     "arguments": {
                         "id": "spedas-task-004",
                         "section": "outputs",
@@ -3709,7 +3799,7 @@ mod tests {
                 "id": 6,
                 "method": "tools/call",
                 "params": {
-                    "name": "nokv_workbench_commit",
+                    "name": "workbench_commit",
                     "arguments": {
                         "id": "spedas-task-004",
                         "manifest": "done"
@@ -3734,7 +3824,7 @@ mod tests {
                     "id": 1,
                     "method": "tools/call",
                     "params": {
-                        "name": "nokv_workbench_put_file",
+                        "name": "workbench_put_file",
                         "arguments": {
                             "id": "spedas-task-005",
                             "section": "outputs",
@@ -3748,7 +3838,7 @@ mod tests {
                     "id": 2,
                     "method": "tools/call",
                     "params": {
-                        "name": "nokv_workbench_put_file",
+                        "name": "workbench_put_file",
                         "arguments": {
                             "id": "spedas-task-005",
                             "section": "outputs",
@@ -3762,7 +3852,7 @@ mod tests {
                     "id": 3,
                     "method": "tools/call",
                     "params": {
-                        "name": "nokv_workbench_put_file",
+                        "name": "workbench_put_file",
                         "arguments": {
                             "id": "spedas-task-005",
                             "section": "outputs",
@@ -3788,7 +3878,7 @@ mod tests {
                 "id": 1,
                 "method": "tools/call",
                 "params": {
-                    "name": "nokv_workbench_create",
+                    "name": "workbench_create",
                     "arguments": {"id": "spedas-task-003"}
                 }
             }),
@@ -3797,7 +3887,7 @@ mod tests {
                 "id": 2,
                 "method": "tools/call",
                 "params": {
-                    "name": "nokv_workbench_snapshot",
+                    "name": "workbench_snapshot",
                     "arguments": {"id": "spedas-task-003"}
                 }
             }),
