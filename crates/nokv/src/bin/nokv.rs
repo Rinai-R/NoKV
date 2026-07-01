@@ -1797,37 +1797,38 @@ where
                                     let method = req.method.clone().unwrap();
                                     let result = match method.as_str() {
                                         "initialize" => {
-                                            const SUPPORTED_PROTOCOL_VERSIONS: &[&str] =
-                                                &["2024-11-05", "2025-03-26"];
+                                            // Ordered latest-first: index 0 is the newest revision
+                                            // we speak. Per the MCP spec, `initialize` negotiates a
+                                            // protocol version rather than rejecting the handshake:
+                                            // when the client requests a version we recognize we
+                                            // echo it back, otherwise we respond with our latest
+                                            // supported version and let the client decide whether it
+                                            // can proceed. Failing on an unknown version broke newer
+                                            // clients (e.g. the mcp SDK requesting "2025-11-25").
+                                            const SUPPORTED_PROTOCOL_VERSIONS: &[&str] = &[
+                                                "2025-11-25",
+                                                "2025-06-18",
+                                                "2025-03-26",
+                                                "2024-11-05",
+                                            ];
                                             let requested = req
                                                 .params
                                                 .as_ref()
                                                 .and_then(|p| p.get("protocolVersion"))
                                                 .and_then(|v| v.as_str());
-                                            match requested {
+                                            let negotiated = match requested {
                                                 Some(v)
-                                                    if SUPPORTED_PROTOCOL_VERSIONS
-                                                        .contains(&v) =>
+                                                    if SUPPORTED_PROTOCOL_VERSIONS.contains(&v) =>
                                                 {
-                                                    Ok(json!({
-                                                        "protocolVersion": v,
-                                                        "capabilities": { "tools": {} },
-                                                        "serverInfo": { "name": "nokv-mcp", "version": "0.1.0" }
-                                                    }))
+                                                    v
                                                 }
-                                                Some(v) => Err((
-                                                    -32602_i64,
-                                                    format!(
-                                                        "unsupported protocol version {v}; supported: {}",
-                                                        SUPPORTED_PROTOCOL_VERSIONS.join(", ")
-                                                    ),
-                                                )),
-                                                None => Ok(json!({
-                                                    "protocolVersion": SUPPORTED_PROTOCOL_VERSIONS[0],
-                                                    "capabilities": { "tools": {} },
-                                                    "serverInfo": { "name": "nokv-mcp", "version": "0.1.0" }
-                                                })),
-                                            }
+                                                _ => SUPPORTED_PROTOCOL_VERSIONS[0],
+                                            };
+                                            Ok(json!({
+                                                "protocolVersion": negotiated,
+                                                "capabilities": { "tools": {} },
+                                                "serverInfo": { "name": "nokv-mcp", "version": "0.1.0" }
+                                            }))
                                         }
                                         "initialized" | "ping" => Ok(json!({})),
                                         "tools/list" => {
@@ -3028,7 +3029,10 @@ mod tests {
     }
 
     #[test]
-    fn mcp_initialize_rejects_unsupported_protocol_version() {
+    fn mcp_initialize_negotiates_latest_on_unknown_version() {
+        // An unknown/newer protocol version must not fail the handshake: the
+        // server negotiates down to its latest supported version and lets the
+        // client decide, per the MCP spec.
         let store = MemoryObjectStore::new();
         let client = NoKvFsClient::connect(spawn_test_server(), store);
         let reqs = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"1999-01-01"}}"#.to_owned() + "\n";
@@ -3037,7 +3041,27 @@ mod tests {
         run_mcp_stream(client, reader, &mut writer).unwrap();
         let output = String::from_utf8(writer).unwrap();
         let resp: serde_json::Value = serde_json::from_str(output.lines().next().unwrap()).unwrap();
-        assert_eq!(resp["error"]["code"], -32602);
+        assert!(
+            resp.get("error").is_none(),
+            "unknown version must not error"
+        );
+        assert_eq!(resp["result"]["protocolVersion"], "2025-11-25");
+    }
+
+    #[test]
+    fn mcp_initialize_accepts_current_sdk_protocol_version() {
+        // Regression: the mcp SDK (>=1.28) requests "2025-11-25"; the server
+        // must accept and echo it so clients like LingTai connect out of the box.
+        let store = MemoryObjectStore::new();
+        let client = NoKvFsClient::connect(spawn_test_server(), store);
+        let reqs = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25"}}"#.to_owned() + "\n";
+        let reader = std::io::Cursor::new(reqs);
+        let mut writer = Vec::new();
+        run_mcp_stream(client, reader, &mut writer).unwrap();
+        let output = String::from_utf8(writer).unwrap();
+        let resp: serde_json::Value = serde_json::from_str(output.lines().next().unwrap()).unwrap();
+        assert!(resp.get("error").is_none());
+        assert_eq!(resp["result"]["protocolVersion"], "2025-11-25");
     }
 
     #[test]
@@ -3063,6 +3087,6 @@ mod tests {
         run_mcp_stream(client, reader, &mut writer).unwrap();
         let output = String::from_utf8(writer).unwrap();
         let resp: serde_json::Value = serde_json::from_str(output.lines().next().unwrap()).unwrap();
-        assert_eq!(resp["result"]["protocolVersion"], "2024-11-05");
+        assert_eq!(resp["result"]["protocolVersion"], "2025-11-25");
     }
 }
