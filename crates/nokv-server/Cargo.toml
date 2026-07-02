@@ -22,5 +22,7 @@ nokv-types.workspace = true
 sha2.workspace = true
 
 [dev-dependencies]
-nokv-client.workspace = true
+# Path-only (no version) so cargo strips this dev-dep when packaging;
+# a versioned entry would recreate the server <-> client publish cycle.
+nokv-client = { path = "../nokv-client" }
 tempfile.workspace = true
