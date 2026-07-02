@@ -102,7 +102,9 @@ jobs:
               echo "::error title=Unknown crate::Unable to resolve $crate in workspace metadata."
               exit 1
             fi
-            if curl -fsS -o /dev/null "https://crates.io/api/v1/crates/${crate}/${version}"; then
+            # crates.io rejects requests without a User-Agent (403), which
+            # would make this existence check always fail and re-publish.
+            if curl -fsS -A "nokv-release-workflow (github.com/NoKV-Lab/NoKV)" -o /dev/null "https://crates.io/api/v1/crates/${crate}/${version}"; then
               echo "Skipping ${crate} ${version}; it already exists on crates.io."
               continue
             fi
