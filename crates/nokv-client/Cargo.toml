@@ -20,5 +20,7 @@ serde_json.workspace = true
 sha2.workspace = true
 
 [dev-dependencies]
-nokv-server.workspace = true
+# Path-only (no version) so cargo strips this dev-dep when packaging;
+# a versioned entry would recreate the client <-> server publish cycle.
+nokv-server = { path = "../nokv-server" }
 tempfile.workspace = true

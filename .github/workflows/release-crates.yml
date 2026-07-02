@@ -43,7 +43,8 @@ jobs:
             nokv-protocol
             nokv-object
             nokv-meta
-            nokv-cluster
+            nokv-agent
+            nokv-control
             nokv-server
             nokv-client
             nokv-fuse
@@ -55,17 +56,31 @@ jobs:
             echo "EOF"
           } >>"$GITHUB_OUTPUT"
 
+      - name: Verify crate list matches workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.publish == null) | .name' | sort)"
+          actual="$(sort <<<"${{ steps.crates.outputs.list }}")"
+          if [[ "$expected" != "$actual" ]]; then
+            echo "::error title=Crate list drift::The workflow crate list does not match the workspace's publishable members."
+            diff <(echo "$expected") <(echo "$actual") || true
+            exit 1
+          fi
+
       - name: Package crates
         if: inputs.dry_run == 'true'
         shell: bash
         run: |
           set -euo pipefail
-          args=()
-          while IFS= read -r crate; do
-            [[ -z "$crate" ]] && continue
-            args+=(-p "$crate")
-          done <<<"${{ steps.crates.outputs.list }}"
-          cargo package --locked "${args[@]}"
+          # Workspace mode resolves not-yet-published workspace siblings from
+          # the local package overlay; a -p list would look them up on
+          # crates.io and fail until every crate has been published once.
+          # This also packages the publish = false members (nokv-bench,
+          # nokv-python) as extra validation; only the publish step below
+          # is gated by the crate list.
+          cargo package --locked --workspace
 
       - name: Publish crates
         if: inputs.dry_run == 'false'
@@ -87,7 +102,9 @@ jobs:
               echo "::error title=Unknown crate::Unable to resolve $crate in workspace metadata."
               exit 1
             fi
-            if curl -fsS -o /dev/null "https://crates.io/api/v1/crates/${crate}/${version}"; then
+            # crates.io rejects requests without a User-Agent (403), which
+            # would make this existence check always fail and re-publish.
+            if curl -fsS -A "nokv-release-workflow (github.com/NoKV-Lab/NoKV)" -o /dev/null "https://crates.io/api/v1/crates/${crate}/${version}"; then
               echo "Skipping ${crate} ${version}; it already exists on crates.io."
               continue
             fi
